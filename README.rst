@@ -1,17 +1,17 @@
 Encoding.Binary
 ===============
 
-A simple cross-platform single-header library for binary
+A simple cross-platform header-only library for binary
 encoding/decoding.
 
 Basic Usage
 -----------
 
 The main abstraction of the library is the ``basic_buffer`` class
-template that allows to specify required encoding byte order (big
-endian is used by default). There are several kinds of buffers (they
-are all typedefed from a single ``basic_buffer`` class template) for
-fine-grained access control:
+template that allows to specify required encoding byte order
+(big-endian is used by default). There are several kinds of buffers
+(they are all typedefed from a single ``basic_buffer`` class template)
+for fine-grained access control:
 
 * ``readonly_buffer`` allows `get` modificators (it works with both
   mutable and immutable input sequences);

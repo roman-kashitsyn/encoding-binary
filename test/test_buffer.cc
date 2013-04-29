@@ -23,6 +23,27 @@ TEST(Buffer, check_invariants) {
     }
 }
 
+TEST(Buffer, access_inspection) {
+    uint8_t cbuf[1];
+    bin::writeonly_buffer wr_buf(cbuf);
+    bin::readonly_buffer rd_buf(cbuf);
+    bin::buffer buf(cbuf);
+
+    ASSERT_FALSE(bin::is_readable<bin::writeonly_buffer>::value);
+    ASSERT_TRUE(bin::is_writable<bin::writeonly_buffer>::value);
+    ASSERT_TRUE(bin::is_readable<bin::readonly_buffer>::value);
+    ASSERT_FALSE(bin::is_writable<bin::readonly_buffer>::value);
+    ASSERT_TRUE(bin::is_readable<bin::buffer>::value);
+    ASSERT_TRUE(bin::is_writable<bin::buffer>::value);
+
+    ASSERT_FALSE(bin::can_read(wr_buf));
+    ASSERT_TRUE(bin::can_write(wr_buf));
+    ASSERT_TRUE(bin::can_read(rd_buf));
+    ASSERT_FALSE(bin::can_write(rd_buf));
+    ASSERT_TRUE(bin::can_read(buf));
+    ASSERT_TRUE(bin::can_write(buf));
+}
+
 TEST(Buffer, writing_bytes_in_big_endian) {
     uint8_t cbuf[4];
     const uint8_t Expected[] = {0xa, 0xb, 0xc, 0xd};
@@ -40,7 +61,7 @@ TEST(Buffer, writing_different_types_in_big_endian) {
     uint8_t cbuf[Total];
     const uint8_t Expected[] = {0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xa};
 
-    bin::buffer buf(cbuf);
+    bin::writeonly_buffer buf(cbuf);
     buf.put(head).put(middle, middle + sizeof(middle)).put(tail);
 
     ASSERT_EQ(buf.end(), buf.pos());

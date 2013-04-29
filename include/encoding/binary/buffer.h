@@ -47,26 +47,10 @@ namespace {
 const char * const OutOfRangeMessage = "Buffer out of bounds";
 std::out_of_range Overflow(OutOfRangeMessage);
 
-template <
-    typename ByteOrder,
-    typename ValueType
->
-std::size_t get_from(const uint8_t *src, ValueType &dst, const read_access_tag&) {
-    ByteOrder::decode(src, dst);
-    return sizeof(dst);
 }
 
-
-template <
-    typename ByteOrder,
-    typename ValueType
->
-std::size_t put_into(ValueType src, uint8_t *dst, const write_access_tag&) {
-    ByteOrder::encode(src, dst);
-    return sizeof(src);
-}
-
-}
+template <typename AccessTag>
+void assert_access(AccessTag) {}
 
 /**
  * @defgroup ByteOrder encoding strategies implementations.
@@ -238,10 +222,14 @@ struct access_traits<read_access_tag> {
 /**
  * @brief Implementation of bound binary buffer.
  *
+ *     begin               pos                   end
+ *       V                  V                     V
+ *       |------------------|--------------------|
+ *
  * Invariant: `begin <= pos <= end`.
  *
  * @tparam ByteOrder byte order used for encoding
- * @tparam AccessTag type tag that restricts operationr on buffer
+ * @tparam AccessTag type tag that restricts operations on buffer
  */
 template <
     typename ByteOrder = default_byte_order,
@@ -270,7 +258,7 @@ public:
     {}
 
     /**
-     * @brief Returns biginnig of a buffer.
+     * @brief Returns biginning of a buffer.
      */
     const_iterator begin() const { return begin_; }
 
@@ -291,7 +279,7 @@ public:
 
     /**
      * @brief Returns number of not consumed/written bytes from input
-     * requence.
+     * sequence.
      */
     std::size_t bytes_left() const { return end_ - pos_; }
 
@@ -312,8 +300,10 @@ public:
      */
     template <typename T>
     basic_buffer & put(T value) {
+        assert_access<write_access_tag>(access_tag());
         if (bytes_left() < sizeof(value)) throw Overflow;
-        pos_ += put_into<byte_order>(value, pos_, access_tag());
+        byte_order::encode(value, pos_);
+        pos_ += sizeof(value);
         return *this;
     }
 
@@ -324,6 +314,7 @@ public:
      * @retun current buffer
      */
     basic_buffer & put(const_iterator from, const const_iterator to) {
+        assert_access<write_access_tag>(access_tag());
         for (; from != to && pos_ != end_; ++pos_, ++from) {
             *pos_ = *from;
         }
@@ -339,8 +330,10 @@ public:
      */
     template <typename T>
     basic_buffer & get(T &value) {
+        assert_access<read_access_tag>(access_tag());
         if (bytes_left() < sizeof(value)) throw Overflow;
-        pos_ += get_from<byte_order>(pos_, value, access_tag());
+        byte_order::decode(pos_, value);
+        pos_ += sizeof(value);
         return *this;
     }
 
@@ -364,7 +357,7 @@ private:
 };
 
 /**
- * @defgroup OverloadedOperators Handy overloaded operators
+ * @defgroup OverloadedOperators Handy overloaded operators.
  * @{
  */
 
@@ -390,18 +383,54 @@ basic_buffer<ByteOrder, AccessTag> & operator<<(basic_buffer<ByteOrder, AccessTa
 /** @} */
 
 /**
- * @defgroup AuxFuncs Various axiliary functions.
+ * @defgroup Aux Various auxiliary functions and templates.
  * @{
  */
 
 template <
     typename T,
-    typename BufferType
+    class BufferType
 >
 T get(BufferType &buf) {
     T tmp;
     buf.get(tmp);
     return tmp;
+}
+
+/**
+ * @brief Compile-time function to check if it possible to read from a
+ * buffer of specified type.
+ */
+template <class BufferType>
+struct is_readable {
+    typedef typename BufferType::access_tag access_tag;
+    static const bool value = access_tag::readable;
+};
+
+/**
+ * @brief Compile-time function to check if it possible to write into a
+ * buffer of specified type.
+ */
+template <class BufferType>
+struct is_writable {
+    typedef typename BufferType::access_tag access_tag;
+    static const bool value = access_tag::writable;
+};
+
+/**
+ * @brief Checks if it possible to read from a given buffer object.
+ */
+template <class BufferType>
+inline bool can_read(const BufferType &) {
+    return is_readable<BufferType>::value;
+}
+
+/**
+ * @brief Checks if it possible to write into a given buffer object.
+ */
+template <class BufferType>
+inline bool can_write(const BufferType &) {
+    return is_writable<BufferType>::value;
 }
 
 /** @} */

@@ -48,9 +48,18 @@ struct big_endian;
 struct little_endian;
 struct native_endian;
 
-struct read_access_tag {};
-struct write_access_tag {};
-struct read_write_access_tag : read_access_tag, write_access_tag {};
+struct read_access_tag {
+    static const bool readable = true;
+    static const bool writable = false;
+};
+struct write_access_tag {
+    static const bool readable = false;
+    static const bool writable = true;
+};
+struct read_write_access_tag : read_access_tag, write_access_tag {
+    using read_access_tag::readable;
+    using write_access_tag::writable;
+};
 
 typedef big_endian default_byte_order;
 
