@@ -33,12 +33,14 @@
 #define ENCODING_BINARY_BUFFER_H_
 
 #include <stdint.h>
+#include <cstring>
 #include <stdexcept>
 #include "encoding/binary/buf_fwd.h"
 
 /**
  * @file
  * @brief Implementation of binary buffers and encoding strategies.
+ * @author Roman Kashitsyn
  */
 namespace encoding { namespace binary {
 
@@ -49,8 +51,17 @@ std::out_of_range Overflow(OutOfRangeMessage);
 
 }
 
+namespace details {
+
 template <typename AccessTag>
 void assert_access(AccessTag) {}
+
+template<bool Cond, class T = void> struct enable_if {};
+template<class T> struct enable_if<true, T> {
+    typedef T type;
+};
+
+}
 
 /**
  * @defgroup ByteOrder encoding strategies implementations.
@@ -235,7 +246,8 @@ template <
     typename ByteOrder = default_byte_order,
     typename AccessTag = read_write_access_tag
     >
-class basic_buffer {
+class basic_buffer
+{
 public:
     typedef ByteOrder byte_order;
     typedef AccessTag access_tag;
@@ -257,10 +269,17 @@ public:
         , pos_(buf)
     {}
 
+    basic_buffer(iterator begin, std::size_t length)
+        : begin_(begin)
+        , end_(begin + length)
+        , pos_(begin)
+    {}
+
     /**
-     * @brief Returns biginning of a buffer.
+     * @brief Returns beginning of a buffer.
      */
     const_iterator begin() const { return begin_; }
+    iterator begin() { return begin_; }
 
     /**
      * @brief Returns end of a buffer.
@@ -271,24 +290,26 @@ public:
      * @brief Returns position of a buffer.
      */
     const_iterator pos() const { return pos_; }
+    iterator pos() { return pos_; }
 
     /**
      * @brief Returns total size of buffer in bytes.
      */
-    std::size_t size() const { return end_ - begin_; }
+    std::size_t size() const { return end() - begin(); }
 
     /**
      * @brief Returns number of not consumed/written bytes from input
      * sequence.
      */
-    std::size_t bytes_left() const { return end_ - pos_; }
+    std::size_t bytes_left() const { return end() - pos(); }
 
     /**
      * @brief Resets buffer position to begin.
      * @return current buffer
      */
-    basic_buffer & reset() {
-        pos_ = begin_;
+    basic_buffer & reset()
+    {
+        pos_ = begin();
         return *this;
     }
 
@@ -299,10 +320,11 @@ public:
      * @return current buffer
      */
     template <typename T>
-    basic_buffer & put(T value) {
-        assert_access<write_access_tag>(access_tag());
+    basic_buffer & put(T value)
+    {
+        details::assert_access<write_access_tag>(access_tag());
         if (bytes_left() < sizeof(value)) throw Overflow;
-        byte_order::encode(value, pos_);
+        byte_order::encode(value, pos());
         pos_ += sizeof(value);
         return *this;
     }
@@ -310,11 +332,13 @@ public:
     /**
      * @brief Copies sequence of bytes into a buffer.
      * @param from input sequence begin
-     * @param to input sequence end
-     * @retun current buffer
+     * @param length length of the input sequence
+     * @return current buffer
      */
-    basic_buffer & put(const_iterator from, const const_iterator to) {
-        assert_access<write_access_tag>(access_tag());
+    basic_buffer & put(const value_type *from, std::size_t length)
+    {
+        details::assert_access<write_access_tag>(access_tag());
+        const const_iterator to = from + length;
         for (; from != to && pos_ != end_; ++pos_, ++from) {
             *pos_ = *from;
         }
@@ -323,17 +347,33 @@ public:
     }
 
     /**
-     * @brief Retrieves a value from a buffer.
+     * @brief Reads a value from a buffer.
      * @tparam T value type
      * @param value reference to value
      * @return current buffer
      */
     template <typename T>
-    basic_buffer & get(T &value) {
-        assert_access<read_access_tag>(access_tag());
+    basic_buffer & get(T &value)
+    {
+        details::assert_access<read_access_tag>(access_tag());
         if (bytes_left() < sizeof(value)) throw Overflow;
-        byte_order::decode(pos_, value);
+        byte_order::decode(pos(), value);
         pos_ += sizeof(value);
+        return *this;
+    }
+
+    /**
+     * @brief Reads a sequence of bytes from a buffer.
+     * @param dst destination byte sequence
+     * @param length length of the output sequence
+     * @return current buffer
+     */
+    basic_buffer & get(value_type *dst, std::size_t length)
+    {
+        details::assert_access<read_access_tag>(access_tag());
+        if (bytes_left() < length) throw Overflow;
+        std::memcpy(dst, pos_, length);
+        pos_ += length;
         return *this;
     }
 
@@ -344,7 +384,8 @@ public:
      * @param count number of bytes to skip
      * @return current buffer
      */
-    basic_buffer & skip(std::size_t count) {
+    basic_buffer & skip(std::size_t count)
+    {
         if (bytes_left() < count) throw Overflow;
         pos_ += count;
         return *this;
@@ -354,6 +395,220 @@ private:
     const iterator begin_;     // not const_iterator to allow assignment `pos_ = begin_`
     const const_iterator end_;
     iterator pos_;
+};
+
+/**
+ * @brief Implementation of binary buffer with compile-time bounds
+ * checking.
+ *
+ * The buffer itself is immutable since all position state is held in
+ * numeric template parameters. It means that each modifier returns
+ * newly constructed buffer of different type (concrete type will be
+ * computed during the compilation). The most convenient way of work
+ * is just to chain modifiers. That allows the compiler to compute
+ * offsets and to do all the boring plumbing. Buffer copy is very
+ * cheap since almost all the state is held in the buffer type.
+ *
+ * @note Synopsis is close to synopsis of `basic_buffer` but sometimes
+ * it *has to be* different to allow compile-time offset computation.
+ * For example, `skip` and `put(const_iterator)` became templates with
+ * numeric parameter.
+ *
+ * @note Since all the checks are performed at compile time, all
+ * `basic_static_buffer` methods provide *strong exception guarantee*.
+ */
+template <
+    class ByteOrder,
+    typename AccessTag,
+    std::size_t Size,
+    std::size_t Offset
+>
+class basic_static_buffer
+{
+public:
+    typedef ByteOrder byte_order;
+    typedef AccessTag access_tag;
+    typedef basic_static_buffer<byte_order, access_tag, 0u, Size> buffer_beginning;
+    typedef typename access_traits<access_tag>::value_type value_type;
+    typedef typename access_traits<access_tag>::iterator iterator;
+    typedef typename access_traits<access_tag>::const_iterator const_iterator;
+
+    basic_static_buffer(iterator begin)
+        : begin_(begin)
+    {}
+
+    /**
+     * @brief Returns pointer to first element of the buffer.
+     */
+    const_iterator begin() const { return begin_; }
+    iterator begin() { return begin_; }
+
+    /**
+     * @brief Returns end of a buffer (pointer to element after the
+     * last one).
+     */
+    const_iterator end() const { return begin_ + Size; }
+
+    /**
+     * @brief Returns current position in a buffer.
+     */
+    const_iterator pos() const { return begin_ + Offset; }
+    iterator pos() { return begin_ + Offset; }
+
+    /**
+     * @brief Returns size of a buffer.
+     */
+    std::size_t size() const { return Size; }
+
+    /**
+     * @brief Returns number bytes left to the end, synonym to `end() - pos()`.
+     */
+    std::size_t bytes_left() const { return Size - Offset; }
+
+    /**
+     * @brief Reads a value from a buffer.
+     * @tparam T value type
+     * @return new buffer with updated offset
+     */
+    template <typename T>
+    typename details::enable_if<
+        sizeof(T) <= (Size - Offset),
+        basic_static_buffer<byte_order, access_tag, Size, Offset + sizeof(T)>
+        >::type get(T &value)
+    {
+        details::assert_access<read_access_tag>(access_tag());
+        byte_order::decode(begin_ + Offset, value);
+        return basic_static_buffer<byte_order, access_tag, Size, Offset + sizeof(T)>(begin_);
+    }
+
+     /**
+     * @brief Reads a sequence of bytes from a buffer.
+     * @tparam Length length of the output sequence
+     * @return new buffer with updated offset
+     */
+    template <std::size_t Length>
+    typename details::enable_if<
+        Length <= (Size - Offset),
+        basic_static_buffer<byte_order, access_tag, Size, Offset + Length>
+        >::type get(value_type *dst)
+    {
+        details::assert_access<read_access_tag>(access_tag());
+        std::memcpy(dst, pos(), Length);
+        return basic_static_buffer<byte_order, access_tag, Size, Offset + Length>(begin());
+    }
+
+    /**
+     * @brief Writes a value into a buffer.
+     * @tparam T value type
+     * @param value value to put
+     * @return new buffer with updated offset
+     */
+    template <typename T>
+    typename details::enable_if<
+        sizeof(T) <= (Size - Offset),
+        basic_static_buffer<byte_order, access_tag, Size, Offset + sizeof(T)>
+        >::type put(T value)
+    {
+        details::assert_access<write_access_tag>(access_tag());
+        byte_order::encode(value, pos());
+        return basic_static_buffer<byte_order, access_tag, Size, Offset + sizeof(T)>(begin());
+    }
+
+    /**
+     * @brief Writes bytes into a buffer.
+     * @tparam Length length of the byte sequence
+     * @return new buffer with updated offset
+     */
+    template <std::size_t Length>
+    typename details::enable_if<
+        Length <= (Size - Offset),
+        basic_static_buffer<byte_order, access_tag, Size, Offset + Length>
+        >::type put(const_iterator bytes)
+    {
+        details::assert_access<write_access_tag>(access_tag());
+        std::memcpy(pos(), bytes, Length);
+        return basic_static_buffer<byte_order, access_tag, Size, Offset + Length>(begin());
+    }
+
+    /**
+     * @brief Skips given bytes count from input sequence.
+     * @tparam SkipBytes number of bytes to skip
+     * @return new buffer with updated offset
+     */
+    template <std::size_t SkipBytes>
+    typename details::enable_if<
+        (Offset + SkipBytes <= Size),
+        basic_static_buffer<byte_order, access_tag, Size, Offset + SkipBytes>
+        >::type skip() const
+    {
+        return basic_static_buffer<byte_order, access_tag, Size, Offset + SkipBytes>(begin());
+    }
+
+    /**
+     * @brief Returns buffer with zero offset.
+     * @return new buffer with zero offset
+     */
+    buffer_beginning reset() const {
+        return buffer_beginning(begin());
+    }
+
+private:
+    const iterator begin_;
+};
+
+/**
+ * @brief Readable and writable static buffer template with big-endian
+ * encoding.
+ */
+template <std::size_t Size, std::size_t Offset = 0>
+class static_buffer :
+    public basic_static_buffer<default_byte_order, read_write_access_tag, Size, Offset>
+{
+public:
+    typedef basic_static_buffer<default_byte_order, read_write_access_tag, Size, Offset> base;
+    typedef typename base::iterator iterator;
+
+    static_buffer(base const &b): base(b)
+    {}
+
+    static_buffer(iterator begin): base(begin)
+    {}
+};
+
+/**
+ * @brief Read-only static buffer template.
+ */
+template <std::size_t Size, std::size_t Offset = 0>
+class readonly_static_buffer :
+    public basic_static_buffer<default_byte_order, read_access_tag, Size, Offset>
+{
+public:
+    typedef basic_static_buffer<default_byte_order, read_access_tag, Size, Offset> base;
+    typedef typename base::iterator iterator;
+
+    readonly_static_buffer(base const &b): base(b)
+    {}
+
+    readonly_static_buffer(iterator begin): base(begin)
+    {}
+};
+
+/**
+ * @brief Write-only static buffer template.
+ */
+template <std::size_t Size, std::size_t Offset = 0>
+class writeonly_static_buffer :
+    public basic_static_buffer<default_byte_order, write_access_tag, Size, Offset>
+{
+public:
+    typedef basic_static_buffer<default_byte_order, write_access_tag, Size, Offset> base;
+    typedef typename base::iterator iterator;
+
+    writeonly_static_buffer(base const &b): base(b)
+    {}
+
+    writeonly_static_buffer(iterator begin): base(begin)
+    {}
 };
 
 /**
@@ -391,7 +646,8 @@ template <
     typename T,
     class BufferType
 >
-T get(BufferType &buf) {
+T get(BufferType &buf)
+{
     T tmp;
     buf.get(tmp);
     return tmp;
@@ -402,7 +658,8 @@ T get(BufferType &buf) {
  * buffer of specified type.
  */
 template <class BufferType>
-struct is_readable {
+struct is_readable
+{
     typedef typename BufferType::access_tag access_tag;
     static const bool value = access_tag::readable;
 };
@@ -412,26 +669,11 @@ struct is_readable {
  * buffer of specified type.
  */
 template <class BufferType>
-struct is_writable {
+struct is_writable
+{
     typedef typename BufferType::access_tag access_tag;
     static const bool value = access_tag::writable;
 };
-
-/**
- * @brief Checks if it possible to read from a given buffer object.
- */
-template <class BufferType>
-inline bool can_read(const BufferType &) {
-    return is_readable<BufferType>::value;
-}
-
-/**
- * @brief Checks if it possible to write into a given buffer object.
- */
-template <class BufferType>
-inline bool can_write(const BufferType &) {
-    return is_writable<BufferType>::value;
-}
 
 /** @} */
 

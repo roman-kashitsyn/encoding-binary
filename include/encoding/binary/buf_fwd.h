@@ -44,6 +44,23 @@ template <
     >
 class basic_buffer;
 
+template <
+    typename ByteOrder,
+    typename AccessTag,
+    std::size_t Size,
+    std::size_t Offset
+    >
+class basic_static_buffer;
+
+template <std::size_t Size, std::size_t Offset>
+class static_buffer;
+
+template <std::size_t Size, std::size_t Offset>
+class readonly_static_buffer;
+
+template <std::size_t Size, std::size_t Offset>
+class writeonly_static_buffer;
+
 struct big_endian;
 struct little_endian;
 struct native_endian;
@@ -70,6 +87,7 @@ typedef basic_buffer<default_byte_order, write_access_tag> writeonly_buffer;
 typedef basic_buffer<little_endian, read_write_access_tag> le_buffer;
 typedef basic_buffer<little_endian, read_access_tag> le_readonly_buffer;
 typedef basic_buffer<little_endian, write_access_tag> le_writeonly_buffer;
+
 
 } }
 

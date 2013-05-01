@@ -6,7 +6,18 @@
 namespace bin = encoding::binary;
 using bin::get;
 
-TEST(Buffer, check_invariants) {
+namespace {
+    uint32_t Head = 0x01020304;
+    const uint8_t Middle[] = {5, 6, 7, 8};
+    uint16_t Tail = 0x090a;
+
+    const std::size_t Total = sizeof(Head) + sizeof(Middle) + sizeof(Tail);
+    const uint8_t BigEndianExpected[] = {0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xa};
+    const uint8_t LittleEndianExpected[] = {0x4, 0x3, 0x2, 0x1, 0x5, 0x6, 0x7, 0x8, 0xa, 0x9};
+}
+
+TEST(Buffer, check_invariants)
+{
     uint8_t cbuf[13];
     bin::buffer buf(cbuf);
     ASSERT_EQ(sizeof(cbuf), buf.bytes_left());
@@ -23,28 +34,18 @@ TEST(Buffer, check_invariants) {
     }
 }
 
-TEST(Buffer, access_inspection) {
-    uint8_t cbuf[1];
-    bin::writeonly_buffer wr_buf(cbuf);
-    bin::readonly_buffer rd_buf(cbuf);
-    bin::buffer buf(cbuf);
-
+TEST(Buffer, access_inspection)
+{
     ASSERT_FALSE(bin::is_readable<bin::writeonly_buffer>::value);
     ASSERT_TRUE(bin::is_writable<bin::writeonly_buffer>::value);
     ASSERT_TRUE(bin::is_readable<bin::readonly_buffer>::value);
     ASSERT_FALSE(bin::is_writable<bin::readonly_buffer>::value);
     ASSERT_TRUE(bin::is_readable<bin::buffer>::value);
     ASSERT_TRUE(bin::is_writable<bin::buffer>::value);
-
-    ASSERT_FALSE(bin::can_read(wr_buf));
-    ASSERT_TRUE(bin::can_write(wr_buf));
-    ASSERT_TRUE(bin::can_read(rd_buf));
-    ASSERT_FALSE(bin::can_write(rd_buf));
-    ASSERT_TRUE(bin::can_read(buf));
-    ASSERT_TRUE(bin::can_write(buf));
 }
 
-TEST(Buffer, writing_bytes_in_big_endian) {
+TEST(Buffer, writing_bytes_in_big_endian)
+{
     uint8_t cbuf[4];
     const uint8_t Expected[] = {0xa, 0xb, 0xc, 0xd};
     bin::buffer buf(cbuf);
@@ -52,50 +53,40 @@ TEST(Buffer, writing_bytes_in_big_endian) {
     ASSERT_EQ(0, std::memcmp(Expected, cbuf, 4));
 }
 
-TEST(Buffer, writing_different_types_in_big_endian) {
-    uint32_t head = 0x01020304;
-    const uint8_t middle[] = {5, 6, 7, 8};
-    uint16_t tail = 0x090a;
-
-    const std::size_t Total = sizeof(head) + sizeof(middle) + sizeof(tail);
+TEST(Buffer, writing_different_types_in_big_endian)
+{
     uint8_t cbuf[Total];
-    const uint8_t Expected[] = {0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xa};
-
     bin::writeonly_buffer buf(cbuf);
-    buf.put(head).put(middle, middle + sizeof(middle)).put(tail);
+    buf.put(Head).put(Middle, sizeof(Middle)).put(Tail);
 
     ASSERT_EQ(buf.end(), buf.pos());
-    ASSERT_EQ(0, std::memcmp(Expected, cbuf, Total));
+    ASSERT_EQ(0, std::memcmp(BigEndianExpected, cbuf, Total));
 
+    uint8_t middle[sizeof(Middle)];
     bin::readonly_buffer rd_buf(cbuf);
-    ASSERT_EQ(head, get<uint32_t>(rd_buf));
-    rd_buf.skip(sizeof(middle));
-    ASSERT_EQ(tail, get<uint16_t>(rd_buf));
+    ASSERT_EQ(Head, get<uint32_t>(rd_buf));
+    rd_buf.get(middle, sizeof(Middle));
+    ASSERT_EQ(0, std::memcmp(middle, Middle, sizeof(Middle)));
+    ASSERT_EQ(Tail, get<uint16_t>(rd_buf));
     ASSERT_EQ(0x0102030405060708u, get<uint64_t>(rd_buf.reset()));
 }
 
 TEST(Buffer, writing_different_types_in_little_endian) {
-    uint32_t head = 0x01020304;
-    const uint8_t middle[] = {5, 6, 7, 8};
-    uint16_t tail = 0x090a;
-
-    const std::size_t Total = sizeof(head) + sizeof(middle) + sizeof(tail);
     uint8_t cbuf[Total];
-    const uint8_t Expected[] = {0x4, 0x3, 0x2, 0x1, 0x5, 0x6, 0x7, 0x8, 0xa, 0x9};
-
     bin::le_buffer buf(cbuf);
-    buf.put(head).put(middle, middle + sizeof(middle)).put(tail);
+    buf.put(Head).put(Middle, sizeof(Middle)).put(Tail);
 
-    ASSERT_EQ(0, std::memcmp(Expected, cbuf, Total));
+    ASSERT_EQ(0, std::memcmp(LittleEndianExpected, cbuf, Total));
 
     bin::le_readonly_buffer rd_buf(cbuf);
-    ASSERT_EQ(head, get<uint32_t>(rd_buf));
-    rd_buf.skip(sizeof(middle));
-    ASSERT_EQ(tail, get<uint16_t>(rd_buf));
+    ASSERT_EQ(Head, get<uint32_t>(rd_buf));
+    rd_buf.skip(sizeof(Middle));
+    ASSERT_EQ(Tail, get<uint16_t>(rd_buf));
     ASSERT_EQ(0x0807060501020304u, get<uint64_t>(rd_buf.reset()));
 }
 
-TEST(Buffer, overloaded_operators) {
+TEST(Buffer, overloaded_operators)
+{
     uint16_t x;
     uint32_t y;
     uint64_t z;
@@ -110,7 +101,8 @@ TEST(Buffer, overloaded_operators) {
     ASSERT_EQ(3u, z);
 }
 
-TEST(ReadOnlyBuffer, allows_to_traverse_array) {
+TEST(ReadOnlyBuffer, allows_to_traverse_array)
+{
     const uint8_t  bytes[] = {0x1, 0x2, 0x3, 0x4, 0x5, 0x6};
     const uint16_t nums[]  = {0x0102, 0x0304, 0x0506};
     bin::readonly_buffer rd_buf(bytes);
@@ -126,9 +118,41 @@ TEST(ReadOnlyBuffer, allows_to_traverse_array) {
     }
 }
 
-TEST(ReadOnlyBuffer, throws_out_of_range_on_overflow) {
+TEST(ReadOnlyBuffer, throws_out_of_range_on_overflow)
+{
     const uint8_t bytes[] = {0x1, 0x2, 0x3, 0x4};
     bin::readonly_buffer buf(bytes);
     (void)get<uint32_t>(buf);
     ASSERT_THROW(get<uint8_t>(buf), std::out_of_range);
+}
+
+TEST(StaticBuffer, supports_read_write)
+{
+    uint8_t cbuf[Total];
+
+    bin::writeonly_static_buffer<Total> buf(cbuf);
+    bin::writeonly_static_buffer<Total, Total> end =
+        buf
+        .put(Head)
+        .put<sizeof(Middle)>(Middle)
+        .put(Tail);
+
+    ASSERT_EQ(buf.end(), end.pos());
+    ASSERT_EQ(0, std::memcmp(BigEndianExpected, cbuf, Total));
+
+    uint32_t r_head;
+    uint16_t r_tail;
+    uint8_t r_middle[sizeof(Middle)];
+    bin::readonly_static_buffer<Total> rd_buf(cbuf);
+    bin::readonly_static_buffer<Total, Total> read_all =
+        rd_buf
+        .get(r_head)
+        .get<sizeof(r_middle)>(r_middle)
+        .get(r_tail);
+    ASSERT_EQ(0u, read_all.bytes_left());
+    ASSERT_EQ(read_all.end(), read_all.pos());
+    ASSERT_EQ(Head, r_head);
+    ASSERT_EQ(0, std::memcmp(Middle, r_middle, sizeof(Middle)));
+    ASSERT_EQ(Tail, r_tail);
+    ASSERT_EQ(0x0102030405060708u, get<uint64_t>(rd_buf));
 }
