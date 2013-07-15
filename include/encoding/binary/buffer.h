@@ -428,7 +428,7 @@ class basic_static_buffer
 public:
     typedef ByteOrder byte_order;
     typedef AccessTag access_tag;
-    typedef basic_static_buffer<byte_order, access_tag, 0u, Size> buffer_beginning;
+    typedef basic_static_buffer<byte_order, access_tag, Size, 0u> buffer_beginning;
     typedef typename access_traits<access_tag>::value_type value_type;
     typedef typename access_traits<access_tag>::iterator iterator;
     typedef typename access_traits<access_tag>::const_iterator const_iterator;
