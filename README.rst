@@ -8,32 +8,31 @@ Concepts
 --------
 
 The main abstraction of the library is the ``buffer`` concept. It
-allows to specify required encoding byte order (big-endian is used by
+allows you to specify required encoding byte order (big-endian is used by
 default) and maximum length. There are several kinds of buffers (some
 of them are typedefed from a single ``basic_buffer`` class template)
-for fine-grained access control:
+for the fine-grained access control:
 
 * ``readonly_buffer`` allows `get` modificators (it works with both
   mutable and immutable input sequences);
 * ``writeonly_buffer`` allows `put` modificators (requires mutable
   output sequence);
-* ``buffer`` allows both modifications (requires mutable input/output
+* ``buffer`` allows both types of modifications (requires mutable input/output
   sequence).
 
 Static Buffers
 --------------
 
-Exact lengths of a buffer and it's components are often known at
+The exact length of a buffer is often known at
 compile time. Such knowledge allows us to find overflow errors *at
 compile time* and to provide *strong exception
 guarantee*. ``basic_static_buffer`` designed specially for such
-cases. It's also requeres some additional template instantiation and
-slightly increases compile-time.
+cases.
 
 Examples
 --------
 
-* Writing fixed sequence of binary values and reading it back:
+* Writing a fixed sequence of binary values and reading it back:
 
   .. code:: c++
 
@@ -72,7 +71,7 @@ Examples
          .get(header.num_entries);  // adding one extra `get` won't compile
     }
 
-* Writing sequece of bytes depending on number specified at runtime:
+* Writing a sequence of bytes to a buffer whose size depends on a value specified at runtime:
 
   .. code:: c++
 
@@ -114,7 +113,7 @@ Examples
       }
     }
 
-* Using forward declaration for shorter compile time:
+* Using forward declaration to shorten compile times:
 
   .. code:: c++
 
@@ -126,9 +125,4 @@ Examples
     bin::readonly_buffer & my_decode(bin::readonly_buffer &buf);
 
 
-Please find more examples at ``test`` folder.
-
-Bugs
-----
-
-Please report found bugs to roman.kashitsyn at gmail.com.
+You can find more examples in the ``test`` directory.
